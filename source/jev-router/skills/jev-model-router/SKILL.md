@@ -1,7 +1,7 @@
 ---
 name: jev-model-router
 description: "Use when choosing a model per task with Jev. Route and delegate."
-version: 0.3.1
+version: 0.3.2
 author: Gary-Y-Lee
 license: MIT
 ---
@@ -15,6 +15,12 @@ any questions. Reasoning effort is not chosen per task: children inherit the par
 
 ## Setup (once per Hermes install/profile, or when the user wants to change models)
 
+0. **AA key check:** call `jev_router_models action=status`. If `aa_key_set` is false, tell the user `help` in one
+   or two lines: get a free key at artificialanalysis.ai and add `AA_API_KEY=<key>` to `env_path`. Offer to open
+   that file in their editor (Windows: `powershell.exe -NoProfile -Command "Start-Process notepad.exe -ArgumentList
+   '\"<env_path>\"'"`). Never read, print, or accept the key in chat. After they save it, run `status` again; only
+   `aa_key_set` and `aa_data` are checked. The user may skip: setup continues, and Jev then gets quota facts only.
+   If the key is set but `aa_data` is false, report `help` (key error or network).
 1. `jev_router_models action=show`. If allowed models already exist, skip to Routing unless the user asked to change them.
 2. **Desktop app (default):** call `jev_router_models action=widget`. Put the returned `show` line
    (`::preview{file="..."}`) alone on its own line in your reply, and add one sentence asking the user to check the

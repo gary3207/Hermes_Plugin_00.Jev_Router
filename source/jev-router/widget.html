@@ -14,6 +14,7 @@
   .jr button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: var(--card); cursor: pointer; font-weight: 600; }
   .jr button:disabled { opacity: .5; cursor: default; }
   .jr .msg { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--accent); white-space: pre-wrap; }
+  .jr .warn { border-left-color: #d97706; background: color-mix(in srgb, #d97706 10%, transparent); }
 </style>
 <div class="jr">
   <h3>jev-router 사용 허용 모델</h3>
@@ -35,7 +36,9 @@
   const list = document.getElementById("list");
   document.getElementById("intro").textContent =
     `쓸 수 있게 허용할 모델만 체크하세요. 작업마다 어떤 모델을 쓸지는 Jev가 아래 벤치마크(Artificial Analysis, effort=${F.effort} 기준)와 구독 잔량을 보고 고릅니다.`;
-  if (DATA.message) { const m = document.createElement("div"); m.className = "msg"; m.textContent = DATA.message; document.getElementById("msg").append(m); }
+  const note = (text, cls) => { const m = document.createElement("div"); m.className = cls; m.setAttribute("role", "status"); m.textContent = text; document.getElementById("msg").append(m); };
+  if (F.aa_help) note("⚠ " + F.aa_help, "msg warn");
+  if (DATA.message) note(DATA.message, "msg");
 
   for (const [prov, models] of Object.entries(DATA.available)) {
     const det = document.createElement("details");

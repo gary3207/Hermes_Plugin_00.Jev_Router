@@ -41,9 +41,27 @@ def _cached(name: str, ttl: int, fetch):
     return data
 
 
-def _fetch_aa() -> list:
+AA_KEY_HELP = ("AA_API_KEY가 없어 벤치마크를 Jev에 보낼 수 없습니다. artificialanalysis.ai에 가입해 무료 API 키를 "
+               "발급받고 {env}에 AA_API_KEY=<키> 한 줄을 추가하세요. 키는 채팅에 붙여넣지 마세요.")
+
+
+def _aa_key():
     from hermes_cli.config import get_env_value  # profile-scoped environ, then $HERMES_HOME/.env
-    api_key = get_env_value("AA_API_KEY")
+    return get_env_value("AA_API_KEY")
+
+
+def _aa_status(aa: dict) -> dict:
+    """Never returns the key itself."""
+    from hermes_constants import get_hermes_home
+    env = str(get_hermes_home() / ".env")
+    key_set = bool(_aa_key())
+    help_text = "" if key_set and aa else AA_KEY_HELP.format(env=env) if not key_set else \
+        "AA_API_KEY는 있지만 벤치마크 조회에 실패했습니다(키 오류 또는 네트워크). 키를 확인하세요."
+    return {"aa_key_set": key_set, "aa_data": bool(aa), "env_path": env, "help": help_text}
+
+
+def _fetch_aa() -> list:
+    api_key = _aa_key()
     if not api_key:
         raise RuntimeError("AA_API_KEY not set")
     rows, page = [], 1
@@ -123,6 +141,8 @@ def _models(args: dict, **_) -> str:
             return _ok(error="not saved", details=errors)
         router.save(_config_path(), cands)
         return _ok(saved=len(cands), path=str(_config_path()))
+    if action == "status":
+        return _ok(**_aa_status(_aa()))
     if action == "options":
         cands = router.load(_config_path())
         if not cands:
@@ -130,11 +150,11 @@ def _models(args: dict, **_) -> str:
         effort = _effort()
         aa, usage = _aa(), _usage(c["provider"] for c in cands)
         return _ok(question=router.QUESTION, options=router.options(cands, aa, usage, effort, _extra()), effort=effort,
-                   notes=[] if aa else ["AA benchmark unavailable (AA_API_KEY missing or fetch failed)"])
+                   notes=[] if aa else [_aa_status(aa)["help"]])
     if action == "widget":
         avail, saved, effort = _available(), router.load(_config_path()), _effort()
         aa, usage, extra = _aa(), _usage(avail), _extra()
-        facts = {"effort": effort,
+        facts = {"effort": effort, "aa_help": _aa_status(aa)["help"],
                  "bench": {router.key({"provider": p, "model": m}):
                            router.bench_text(aa.get(router.aa_slug(m, effort)), extra.get(router.aa_slug(m, effort)))
                            for p, ms in avail.items() for m in ms},
@@ -144,7 +164,7 @@ def _models(args: dict, **_) -> str:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(router.render_widget(tpl, avail, saved, args.get("message", ""), facts), encoding="utf-8")
         return _ok(path=str(out), show=f'::preview{{file="{out.as_posix()}"}}')
-    return _ok(error="action must be options, widget, available, show or save")
+    return _ok(error="action must be status, options, widget, available, show or save")
 
 
 def _make_delegate(ctx):
@@ -174,14 +194,15 @@ def _make_delegate(ctx):
 
 MODELS_SCHEMA = {
     "name": "jev_router_models",
-    "description": ("jev-router candidate models. action=options returns {question, options} to pass unchanged to "
+    "description": ("jev-router candidate models. action=status reports whether AA_API_KEY is set and AA data loads "
+                    "(never the key) with a Korean help text. action=options returns {question, options} to pass unchanged to "
                     "the Jev MCP `choice` tool (options carry AA benchmark scores and live subscription quota per "
                     "allowed model). action=widget writes a checkbox picker (desktop) and returns a ::preview line to "
                     "put alone on its own line; its Save button sends 'jev-router save {json}'. action=available lists "
                     "models authenticated in THIS Hermes; action=show prints the allowed list; action=save stores the "
                     "models the USER checked (validated against available)."),
     "parameters": {"type": "object", "properties": {
-        "action": {"type": "string", "enum": ["options", "widget", "available", "show", "save"]},
+        "action": {"type": "string", "enum": ["status", "options", "widget", "available", "show", "save"]},
         "message": {"type": "string", "description": "widget only: status text shown at the top (e.g. save result)."},
         "candidates": {"type": "array", "items": {"type": "object", "properties": {
             "provider": {"type": "string"}, "model": {"type": "string"}}, "required": ["provider", "model"]}}},

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,55 +8,56 @@ _spec = importlib.util.spec_from_file_location("router", Path(__file__).resolve(
 router = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(router)
 
-C = [
-    {"provider": "a", "model": "light", "tier": 1},
-    {"provider": "b", "model": "coder", "tier": 2, "tasks": ["coding"]},
-    {"provider": "a", "model": "std", "tier": 2},
-    {"provider": "a", "model": "top", "tier": 3},
-]
+AA = {
+    "claude-opus-5-5-medium": {"name": "Claude Opus 5.5 (Medium)", "evaluations": {
+        "artificial_analysis_intelligence_index": 51.2, "artificial_analysis_coding_index": None,
+        "artificial_analysis_engineering_index": 53.7}, "pricing": {"price_1m_input_tokens": 4, "price_1m_output_tokens": 20}},
+    "gpt-6-1-sol-medium": {"name": "GPT-6.1 Sol (Medium)", "evaluations": {
+        "artificial_analysis_intelligence_index": 47.8}, "pricing": {}},
+}
+USAGE = {"anthropic": {"windows": [{"label": "Current session", "used_percent": 68.0},
+                                   {"label": "Current week", "used_percent": 13.0}]},
+         "openai-codex": {"unavailable_reason": "x"}}
 
 
-class RouteTest(unittest.TestCase):
-    def pick(self, cands, *a):
-        return router.route(cands, *a)[0]["model"]
+class RouterTest(unittest.TestCase):
+    def test_aa_slug(self):
+        self.assertEqual(router.aa_slug("gpt-6.1-sol", "medium"), "gpt-6-1-sol-medium")
+        self.assertEqual(router.aa_slug("anthropic/claude-opus-5.5", "max"), "claude-opus-5-5")
+        self.assertEqual(router.aa_slug("gpt-6-sol-900k", "xhigh"), "gpt-6-sol-xhigh")
+        self.assertEqual(router.aa_slug("claude-haiku-5-5", "weird"), "claude-haiku-5-5-medium")
 
-    def test_tiers(self):
-        self.assertEqual(self.pick(C, "research", 1, False, 0.9), "light")
-        self.assertEqual(self.pick(C, "research", 3, False, 0.9), "std")
-        self.assertEqual(self.pick(C, "research", 5, False, 0.9), "top")
-
-    def test_task_preference_and_escalation(self):
-        self.assertEqual(self.pick(C, "coding", 3, False, 0.9), "coder")
-        self.assertEqual(self.pick(C, "writing", 1, True, 0.9), "top")
-        self.assertEqual(self.pick(C, "writing", 2, False, 0.4), "std")
-
-    def test_missing_tier_prefers_higher_then_lower(self):
-        only_low_high = [C[0], C[3]]
-        self.assertEqual(self.pick(only_low_high, "data", 3, False, 0.9), "top")
-        self.assertEqual(self.pick([C[0]], "data", 5, False, 0.9), "light")
-
-    def test_empty(self):
-        with self.assertRaises(ValueError):
-            router.route([], "coding", 3, False, 0.9)
+    def test_options_lines(self):
+        cands = [{"provider": "anthropic", "model": "claude-opus-5-5"}, {"provider": "openai-codex", "model": "gpt-6.1-sol"},
+                 {"provider": "copilot", "model": "unknown-x"}]
+        o = router.options(cands, AA, USAGE, "medium")
+        self.assertEqual(list(o), ["anthropic/claude-opus-5-5", "openai-codex/gpt-6.1-sol", "copilot/unknown-x"])
+        self.assertIn("종합 51.2, 엔지니어링 53.7 | $4/$20/Mtok", o["anthropic/claude-opus-5-5"])
+        self.assertNotIn("코딩", o["anthropic/claude-opus-5-5"])  # null scores are omitted
+        self.assertIn("Current session 32% 남음, Current week 87% 남음", o["anthropic/claude-opus-5-5"])
+        self.assertIn("잔량 정보 없음", o["openai-codex/gpt-6.1-sol"])
+        self.assertTrue(o["copilot/unknown-x"].startswith("벤치마크 없음"))
 
     def test_validate(self):
-        avail = {"a": ["light", "std", "top"], "b": ["coder"]}
-        self.assertEqual(router.validate(C, avail), [])
-        bad = router.validate([{"provider": "x", "model": "m", "tier": 4, "tasks": ["nope"]}], avail)
-        self.assertEqual(len(bad), 3)
+        avail = {"a": ["m1"], "b": ["m2"]}
+        self.assertEqual(router.validate([{"provider": "a", "model": "m1"}], avail), [])
+        self.assertEqual(len(router.validate([{"provider": "x", "model": "m"}, {"provider": "a", "model": "zz"}], avail)), 2)
+        self.assertEqual(router.validate([], avail), ["candidates is empty"])
 
-    def test_save_load_roundtrip(self):
+    def test_load_drops_legacy_tiers(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "sub" / "candidates.json"
             self.assertEqual(router.load(p), [])
-            router.save(p, C)
-            self.assertEqual(router.load(p), C)
+            router.save(p, [{"provider": "a", "model": "m", "tier": 2, "tasks": ["coding"]}])
+            self.assertEqual(router.load(p), [{"provider": "a", "model": "m"}])
 
     def test_render_widget(self):
-        html = router.render_widget("<script>const D = __DATA__;</script>", {"p": ["</script><b>"]}, C[:1], "msg")
+        html = router.render_widget("<script>const D = __DATA__;</script>", {"p": ["</script><b>"]}, [], "msg",
+                                    {"effort": "medium"})
         self.assertNotIn("__DATA__", html)
         self.assertEqual(html.count("</script>"), 1)  # model id cannot close the script tag
-        self.assertIn('"message": "msg"', html)
+        data = json.loads(html[len("<script>const D = "):-len(";</script>")].replace("<\\/", "</"))
+        self.assertEqual(data["facts"], {"effort": "medium"})
 
     def test_parse_child(self):
         self.assertEqual(router.parse_child("NEEDS_INPUT: which branch?"),

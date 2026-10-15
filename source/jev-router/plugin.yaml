@@ -1,6 +1,6 @@
 name: jev-router
-version: 0.2.0
-description: Per-task model choice with TypeSafe Jev labels and a user-chosen candidate table; runs the task as a linked subagent on that model.
+version: 0.3.0
+description: Jev picks the model per task from user-allowed models using Artificial Analysis benchmarks and live subscription quota; runs it as a linked subagent.
 author: Gary-Y-Lee
 license: MIT
 kind: standalone

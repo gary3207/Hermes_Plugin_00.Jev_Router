@@ -61,6 +61,12 @@ def _aa() -> dict:
     return {r["slug"]: r for r in _cached("aa-cache.json", AA_TTL, _fetch_aa) or []}
 
 
+def _extra() -> dict:
+    """Per-evaluation scores the user had collected from the AA site ({slug: {eval: score}}); absent = {}."""
+    path = _home() / "aa-extra.json"
+    return json.loads(path.read_text(encoding="utf-8")).get("scores", {}) if path.is_file() else {}
+
+
 def _usage_one(provider: str):
     exe = shutil.which("hermes")
     if not exe:
@@ -123,13 +129,14 @@ def _models(args: dict, **_) -> str:
             return _ok(error="no candidate models saved; run setup (action=widget) first")
         effort = _effort()
         aa, usage = _aa(), _usage(c["provider"] for c in cands)
-        return _ok(question=router.QUESTION, options=router.options(cands, aa, usage, effort), effort=effort,
+        return _ok(question=router.QUESTION, options=router.options(cands, aa, usage, effort, _extra()), effort=effort,
                    notes=[] if aa else ["AA benchmark unavailable (AA_API_KEY missing or fetch failed)"])
     if action == "widget":
         avail, saved, effort = _available(), router.load(_config_path()), _effort()
-        aa, usage = _aa(), _usage(avail)
+        aa, usage, extra = _aa(), _usage(avail), _extra()
         facts = {"effort": effort,
-                 "bench": {router.key({"provider": p, "model": m}): router.bench_text(aa.get(router.aa_slug(m, effort)))
+                 "bench": {router.key({"provider": p, "model": m}):
+                           router.bench_text(aa.get(router.aa_slug(m, effort)), extra.get(router.aa_slug(m, effort)))
                            for p, ms in avail.items() for m in ms},
                  "quota": {p: router.quota_text(usage.get(p)) for p in avail}}
         out = _home() / "setup.html"

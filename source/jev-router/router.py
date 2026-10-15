@@ -14,6 +14,10 @@ AA_FIELDS = (("artificial_analysis_intelligence_index", "종합"), ("artificial_
              ("artificial_analysis_agentic_index", "에이전트"), ("artificial_analysis_engineering_index", "엔지니어링"),
              ("artificial_analysis_strategy_and_ops_index", "전략"),
              ("artificial_analysis_finance_and_accounting_index", "금융"), ("artificial_analysis_legal_index", "법률"))
+# Short labels for per-evaluation scores the user collects into aa-extra.json (AA site, personal use, on request).
+EXTRA_LABELS = {"Terminal-Bench 4.0": "TB4(에이전트코딩)", "SciCode": "SciCode(코딩)", "AutomationBench-AA": "자동화",
+                "GDPval-AA v2.1": "GDPval", "AA-Briefcase v1.1": "Briefcase", "Humanity's Last Exam": "HLE",
+                "AA-LCR v1.1": "긴문맥", "AA-Omniscience": "지식신뢰", "GDP.pdf": "문서추론", "CritPt": "물리추론"}
 
 
 def key(c: dict) -> str:
@@ -53,15 +57,18 @@ def aa_slug(model: str, effort: str) -> str:
     return base + EFFORT_SUFFIX.get(effort, "-medium")
 
 
-def bench_text(row) -> str:
-    if not row:
+def bench_text(row, extra=None) -> str:
+    """row = AA API record; extra = {evaluation name: displayed score} from aa-extra.json."""
+    if not row and not extra:
         return "벤치마크 없음"
+    row = row or {}
     ev = row.get("evaluations") or {}
     parts = [f"{label} {ev[f]:g}" for f, label in AA_FIELDS if ev.get(f) is not None]
+    parts += [f"{EXTRA_LABELS.get(k, k)} {v}" for k, v in (extra or {}).items()]
     pr = row.get("pricing") or {}
     price = f" | ${pr['price_1m_input_tokens']:g}/${pr['price_1m_output_tokens']:g}/Mtok" \
         if pr.get("price_1m_input_tokens") is not None and pr.get("price_1m_output_tokens") is not None else ""
-    return f"AA[{row.get('name')}] " + ", ".join(parts) + price
+    return f"AA[{row.get('name') or 'site'}] " + ", ".join(parts) + price
 
 
 def quota_text(usage) -> str:
@@ -73,10 +80,14 @@ def quota_text(usage) -> str:
     return "잔량 " + ", ".join(wins) if wins else "잔량 정보 없음"
 
 
-def options(candidates: list, aa: dict, usage: dict, effort: str) -> dict:
-    """Jev choice options {provider/model: one-line facts}; aa = {slug: AA row}, usage = {provider: json}."""
-    return {key(c): f"{bench_text(aa.get(aa_slug(c['model'], effort)))} | {quota_text(usage.get(c['provider']))}"
-            for c in candidates}
+def options(candidates: list, aa: dict, usage: dict, effort: str, extra: dict = None) -> dict:
+    """Jev choice options {provider/model: one-line facts}; aa/extra keyed by AA slug, usage by provider."""
+    extra = extra or {}
+    out = {}
+    for c in candidates:
+        slug = aa_slug(c["model"], effort)
+        out[key(c)] = f"{bench_text(aa.get(slug), extra.get(slug))} | {quota_text(usage.get(c['provider']))}"
+    return out
 
 
 def parse_child(summary: str) -> dict:

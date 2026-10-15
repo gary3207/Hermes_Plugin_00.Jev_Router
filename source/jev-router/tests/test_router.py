@@ -38,6 +38,16 @@ class RouterTest(unittest.TestCase):
         self.assertIn("잔량 정보 없음", o["openai-codex/gpt-6.1-sol"])
         self.assertTrue(o["copilot/unknown-x"].startswith("벤치마크 없음"))
 
+    def test_extra_scores_merge(self):
+        extra = {"claude-opus-5-5-medium": {"Terminal-Bench 4.0": "53%", "NewEval": "7"},
+                 "only-site-medium": {"SciCode": "50%"}}
+        cands = [{"provider": "anthropic", "model": "claude-opus-5-5"}, {"provider": "x", "model": "only-site"}]
+        o = router.options(cands, AA, USAGE, "medium", extra)
+        self.assertIn("엔지니어링 53.7, TB4(에이전트코딩) 53%, NewEval 7 | $4/$20/Mtok", o["anthropic/claude-opus-5-5"])
+        self.assertTrue(o["x/only-site"].startswith("AA[site] SciCode(코딩) 50%"))
+        self.assertEqual(router.options(cands[:1], AA, USAGE, "medium"),
+                         {"anthropic/claude-opus-5-5": router.options(cands[:1], AA, USAGE, "medium", {})["anthropic/claude-opus-5-5"]})
+
     def test_validate(self):
         avail = {"a": ["m1"], "b": ["m2"]}
         self.assertEqual(router.validate([{"provider": "a", "model": "m1"}], avail), [])

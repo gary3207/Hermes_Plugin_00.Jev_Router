@@ -1,5 +1,5 @@
 name: jev-router
-version: 0.3.0
+version: 0.3.1
 description: Jev picks the model per task from user-allowed models using Artificial Analysis benchmarks and live subscription quota; runs it as a linked subagent.
 author: Gary-Y-Lee
 license: MIT

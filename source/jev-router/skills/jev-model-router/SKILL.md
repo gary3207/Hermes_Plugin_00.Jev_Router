@@ -1,7 +1,7 @@
 ---
 name: jev-model-router
 description: "Use when choosing a model per task with Jev. Route and delegate."
-version: 0.3.0
+version: 0.3.1
 author: Gary-Y-Lee
 license: MIT
 ---
@@ -30,6 +30,22 @@ any questions. Reasoning effort is not chosen per task: children inherit the par
 
 The list lives at `$HERMES_HOME/jev-router/candidates.json`, one per profile. AA scores need `AA_API_KEY` in `.env`
 (cached for 24h). Quota comes from `hermes usage --json` (cached for 5 minutes).
+
+## Extra per-evaluation scores (refresh ONLY when the user asks)
+
+The free AA API has no coding or agentic index for most models. The user keeps per-evaluation scores
+(Terminal-Bench, SciCode, GDPval, ...) in `$HERMES_HOME/jev-router/aa-extra.json`, and `options` appends them to
+each model line. This file is personal, non-commercial data and is never collected automatically. Refresh it only
+when the user asks, for example because models changed or new scores are needed:
+1. Make sure Aside works (`aside --version`). Use `aside repl` (no Aside model needed); `aside exec` is slow on
+   these chart-heavy pages.
+2. Open AA comparison pages for pairs of the allowed models at the current effort:
+   `https://artificialanalysis.ai/models/comparisons/<slugA>-vs-<slugB>`, where slugs come from `aa_slug`, e.g.
+   `gpt-6-1-sol-medium`. Read `table tr` cells. Map columns by the header model names, not by URL order: the site
+   reorders them.
+3. Write `{"source", "fetched", "effort", "scores": {slug: {"Terminal-Bench 4.0": "53%", ...}}}` with the
+   displayed strings. Cross-check one model that appears on two pages. Close the AA tabs you opened.
+4. Tell the user the fetch date and any values marked "Under review".
 
 ## Routing a task
 

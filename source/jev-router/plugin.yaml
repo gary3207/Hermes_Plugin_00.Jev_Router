@@ -1,0 +1,11 @@
+name: jev-router
+version: 0.1.0
+description: Per-task model choice with TypeSafe Jev labels and a user-chosen candidate table; runs the task as a linked subagent on that model.
+author: Gary-Y-Lee
+license: MIT
+kind: standalone
+provides_tools:
+  - jev_router_models
+  - jev_delegate
+provides_hooks: []
+tags: [jev, typesafe, routing, model, delegation]

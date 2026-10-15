@@ -51,6 +51,12 @@ class RouteTest(unittest.TestCase):
             router.save(p, C)
             self.assertEqual(router.load(p), C)
 
+    def test_render_widget(self):
+        html = router.render_widget("<script>const D = __DATA__;</script>", {"p": ["</script><b>"]}, C[:1], "msg")
+        self.assertNotIn("__DATA__", html)
+        self.assertEqual(html.count("</script>"), 1)  # model id cannot close the script tag
+        self.assertIn('"message": "msg"', html)
+
     def test_parse_child(self):
         self.assertEqual(router.parse_child("NEEDS_INPUT: which branch?"),
                          {"status": "needs_input", "question": "which branch?"})

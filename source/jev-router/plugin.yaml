@@ -1,5 +1,5 @@
 name: jev-router
-version: 0.1.0
+version: 0.2.0
 description: Per-task model choice with TypeSafe Jev labels and a user-chosen candidate table; runs the task as a linked subagent on that model.
 author: Gary-Y-Lee
 license: MIT

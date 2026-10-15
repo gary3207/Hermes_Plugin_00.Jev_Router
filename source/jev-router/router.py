@@ -59,6 +59,11 @@ def route(candidates: list, task_type: str, difficulty: int, quality_critical: b
     return pick, reason
 
 
+def render_widget(template: str, available: dict, saved: list, message: str = "") -> str:
+    data = json.dumps({"available": available, "saved": saved, "message": message}, ensure_ascii=False)
+    return template.replace("__DATA__", data.replace("</", "<\\/"))  # no </script> breakout from model ids
+
+
 def parse_child(summary: str) -> dict:
     """Child protocol: a final answer starting with NEEDS_INPUT: is a question for the user."""
     text = (summary or "").strip()

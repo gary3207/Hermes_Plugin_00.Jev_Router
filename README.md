@@ -18,7 +18,8 @@
 ```
 source/jev-router/
   plugin.yaml, __init__.py      도구 2개와 Skill 등록
-  router.py                     라우팅, 검증, 저장 로직 (표준 라이브러리만 사용)
+  router.py                     라우팅, 검증, 저장, 위젯 렌더링 (표준 라이브러리만 사용)
+  widget.html                   후보 선택용 체크박스 위젯 템플릿
   skills/jev-model-router/      번들 Skill
   tests/test_router.py          단위 테스트
 ```
@@ -51,7 +52,7 @@ hermes plugins list --plain --no-bundled
 ```text
 jev-model-router 설정해줘
 ```
-Agent가 `jev_router_models action=available`로 이 환경에서 쓸 수 있는 모델을 보여줍니다. 사용자는 후보 모델과 각 모델의 tier를 고릅니다(1 가벼움·빠름, 2 표준, 3 최고 성능). 필요하면 업무 유형별 선호도 지정합니다. 저장할 때 이 환경의 모델 목록과 대조해 검증하며, 저장 위치는 `$HERMES_HOME/jev-router/candidates.json`(프로필별)입니다.
+데스크톱 앱에서는 채팅 안에 **체크박스 선택 화면**(인라인 위젯, `jev_router_models action=widget`)이 나타납니다. provider별로 묶인 모델을 검색하고 체크한 뒤, 모델마다 tier(1 가벼움·빠름 / 2 표준 / 3 최고 성능)와 선호 업무를 지정하고 **저장**을 누릅니다. 이미 저장한 후보는 미리 체크돼 있습니다. 메신저나 CLI처럼 위젯을 띄울 수 없는 곳에서는 clarify 다중 선택으로 대신 고릅니다(질문 하나당 최대 4개). 저장할 때 이 환경의 모델 목록과 대조해 검증하며, 저장 위치는 `$HERMES_HOME/jev-router/candidates.json`(프로필별)입니다.
 
 ### 5. 사용
 평소처럼 작업을 지시합니다. Skill이 Jev로 작업을 분류하고, `jev_delegate`로 실행한 뒤 어떤 모델이 왜 선택됐는지 함께 보고합니다. 간단한 질문은 하위 에이전트로 넘기지 않고 현재 세션이 바로 답합니다. "모델 X로 해줘"라고 하면 `override_model`이 적용되는데, 이때 X는 저장된 후보여야 합니다.

@@ -1,0 +1,94 @@
+<style>
+  .jr { font-size: 13px; color: var(--foreground); max-width: 760px; }
+  .jr h3 { margin: 0 0 4px; font-size: 15px; }
+  .jr .muted { color: var(--muted-foreground); }
+  .jr .bar { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  .jr input[type=search] { flex: 1; min-width: 180px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: inherit; }
+  .jr details { border: 1px solid var(--border); border-radius: 8px; margin: 6px 0; background: var(--card); }
+  .jr summary { cursor: pointer; padding: 7px 10px; font-weight: 600; }
+  .jr .row { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 8px; align-items: center; padding: 3px 10px; }
+  .jr .row:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .jr .row code { font-size: 12px; }
+  .jr select { background: transparent; color: inherit; border: 1px solid var(--border); border-radius: 4px; }
+  .jr .tasks { display: flex; gap: 3px; }
+  .jr .chip { font-size: 11px; border: 1px solid var(--border); border-radius: 10px; padding: 0 6px; cursor: pointer; user-select: none; }
+  .jr .chip.on { background: var(--accent); border-color: var(--accent); color: var(--card); }
+  .jr .off { opacity: .35; pointer-events: none; }
+  .jr button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: var(--card); cursor: pointer; font-weight: 600; }
+  .jr button:disabled { opacity: .5; cursor: default; }
+  .jr .msg { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--accent); white-space: pre-wrap; }
+</style>
+<div class="jr">
+  <h3>jev-router 후보 모델 선택</h3>
+  <div class="muted">이 Hermes에서 인증된 모델만 표시됩니다. 체크한 모델에 tier(1 가벼움·빠름 / 2 표준 / 3 최고)와, 필요하면 선호 업무를 지정한 뒤 저장하세요.</div>
+  <div id="msg"></div>
+  <div class="bar">
+    <input type="search" id="q" placeholder="모델 검색 (예: haiku, gpt-6)" aria-label="모델 검색">
+    <span class="muted" id="count"></span>
+    <button id="save">저장</button>
+  </div>
+  <div id="list"></div>
+</div>
+<script>
+(() => {
+  const DATA = __DATA__;
+  const TASKS = ["coding", "research", "writing", "data", "simple_qa"];
+  const key = (p, m) => p + "\u0000" + m;
+  const state = new Map(DATA.saved.map(c => [key(c.provider, c.model), { tier: c.tier, tasks: new Set(c.tasks || []) }]));
+  const list = document.getElementById("list");
+  if (DATA.message) { const m = document.createElement("div"); m.className = "msg"; m.textContent = DATA.message; document.getElementById("msg").append(m); }
+
+  for (const [prov, models] of Object.entries(DATA.available)) {
+    const det = document.createElement("details");
+    det.open = models.some(m => state.has(key(prov, m)));
+    det.innerHTML = `<summary>${prov} <span class="muted">(${models.length})</span></summary>`;
+    for (const model of models) {
+      const k = key(prov, model), row = document.createElement("div"), lab = document.createElement("label");
+      row.className = "row"; row.dataset.text = (prov + " " + model).toLowerCase();
+      const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: state.has(k) });
+      cb.setAttribute("aria-label", `${prov} ${model}`);
+      const name = document.createElement("code"); name.textContent = model;
+      const sel = document.createElement("select"); sel.setAttribute("aria-label", "tier");
+      [1, 2, 3].forEach(t => sel.add(new Option("tier " + t, t)));
+      sel.value = state.get(k)?.tier || 2;
+      const tasks = document.createElement("span"); tasks.className = "tasks";
+      for (const t of TASKS) {
+        const chip = document.createElement("span"); chip.className = "chip"; chip.textContent = t;
+        chip.setAttribute("role", "button"); chip.tabIndex = 0;
+        if (state.get(k)?.tasks.has(t)) chip.classList.add("on");
+        const toggle = e => { if (e.key === " ") e.preventDefault(); const s = state.get(k); if (!s) return;
+          s.tasks.has(t) ? s.tasks.delete(t) : s.tasks.add(t); chip.classList.toggle("on"); };
+        chip.addEventListener("click", toggle);
+        chip.addEventListener("keydown", e => (e.key === "Enter" || e.key === " ") && toggle(e));
+        tasks.append(chip);
+      }
+      const sync = () => { [sel, tasks].forEach(el => el.classList.toggle("off", !cb.checked)); count(); };
+      cb.addEventListener("change", () => {
+        cb.checked ? state.set(k, { tier: +sel.value, tasks: new Set() }) : state.delete(k);
+        tasks.querySelectorAll(".chip").forEach(c => c.classList.remove("on")); sync();
+      });
+      sel.addEventListener("change", () => state.has(k) && (state.get(k).tier = +sel.value));
+      lab.append(cb, " ", name); row.append(lab, sel, tasks); det.append(row); sync();
+    }
+    list.append(det);
+  }
+
+  function count() { document.getElementById("count").textContent = `선택 ${state.size}개`; }
+  document.getElementById("q").addEventListener("input", e => {
+    const q = e.target.value.trim().toLowerCase();
+    list.querySelectorAll("details").forEach(d => {
+      let any = false;
+      d.querySelectorAll(".row").forEach(r => { const hit = !q || r.dataset.text.includes(q); r.style.display = hit ? "" : "none"; any ||= hit; });
+      d.style.display = any ? "" : "none"; if (q) d.open = any;
+    });
+  });
+  document.getElementById("save").addEventListener("click", e => {
+    const candidates = [...state].map(([k, s]) => { const [provider, model] = k.split("\u0000");
+      const c = { provider, model, tier: s.tier }; if (s.tasks.size) c.tasks = [...s.tasks]; return c; });
+    if (!candidates.length) { alert("모델을 하나 이상 선택하세요."); return; }
+    e.target.disabled = true; e.target.textContent = "저장 요청 중…";
+    window.hermes.send("jev-router save " + JSON.stringify({ candidates }));
+  });
+  count();
+})();
+</script>

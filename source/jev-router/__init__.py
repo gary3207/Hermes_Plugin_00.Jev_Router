@@ -37,7 +37,14 @@ def _models(args: dict, **_) -> str:
             return _ok(error="not saved", details=errors)
         router.save(_config_path(), cands)
         return _ok(saved=len(cands), path=str(_config_path()))
-    return _ok(error="action must be available, show or save")
+    if action == "widget":
+        out = _config_path().with_name("setup.html")
+        tpl = (Path(__file__).parent / "widget.html").read_text(encoding="utf-8")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(router.render_widget(tpl, _available(), router.load(_config_path()),
+                                            args.get("message", "")), encoding="utf-8")
+        return _ok(path=str(out), show=f'::preview{{file="{out.as_posix()}"}}')
+    return _ok(error="action must be available, show, save or widget")
 
 
 def _make_delegate(ctx):
@@ -78,12 +85,15 @@ def _make_delegate(ctx):
 
 MODELS_SCHEMA = {
     "name": "jev_router_models",
-    "description": ("Manage the user's candidate models for jev-router. action=available lists providers/models "
+    "description": ("Manage the user's candidate models for jev-router. action=widget writes a checkbox picker "
+                    "(desktop) and returns a ::preview line to put alone on its own line in your reply; its Save "
+                    "button sends 'jev-router save {json}'. action=available lists providers/models "
                     "authenticated in THIS Hermes; action=show prints the saved table; action=save stores "
                     "candidates the USER chose (validated against available). tier: 1 light/fast, 2 standard, "
                     "3 strongest. tasks (optional) prefers a model for: " + ", ".join(router.TASK_TYPES) + "."),
     "parameters": {"type": "object", "properties": {
-        "action": {"type": "string", "enum": ["available", "show", "save"]},
+        "action": {"type": "string", "enum": ["widget", "available", "show", "save"]},
+        "message": {"type": "string", "description": "widget only: status text shown at the top (e.g. save result)."},
         "candidates": {"type": "array", "items": {"type": "object", "properties": {
             "provider": {"type": "string"}, "model": {"type": "string"},
             "tier": {"type": "integer", "enum": [1, 2, 3]},

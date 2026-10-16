@@ -1,7 +1,7 @@
 ---
 name: jev-model-router
-description: "Use when choosing a model per task with Jev. Route and delegate."
-version: 0.3.2
+description: "Use when delegating subagents or choosing a model per task. Jev routes."
+version: 0.4.0
 author: Gary-Y-Lee
 license: MIT
 ---
@@ -58,12 +58,13 @@ when the user asks, for example because models changed or new scores are needed:
 1. Answer directly, without routing, for trivial chat or quick lookups.
 2. If the user named a model, call `jev_delegate` with `choice="<provider>/<model>"` and `user_override=true`. It must
    be an allowed model.
-3. Call `jev_router_models action=options`. Then call the Jev MCP `choice` tool (on the `jev` server; if it is
-   deferred, use `tool_search` for "jev") with `question` and `options` exactly as returned, and `context` set to a
-   short task summary (goal, size, stakes, audience).
-4. Call `jev_delegate` with `choice` set to Jev's `choice`, `confidence` set to Jev's confidence, `goal` set to the
-   full instruction, and `context` set to everything the child needs (paths, constraints, earlier decisions). The
-   child sees nothing else.
+3. Call `jev_router_models action=options`. Then ask Jev (MCP server `jev`; if deferred, `tool_search` for "jev")
+   with `question` and `options` exactly as returned. One task: `choice` with `context` = a short task summary (goal,
+   size, stakes, audience). Several tasks: ONE `classify` call with `items` = one short summary per task.
+4. Call `jev_delegate` ONCE. Several tasks go in `tasks=[{goal, choice, confidence, context}, ...]`: they run in
+   parallel and `results[]` comes back in the same order. `choice`/`confidence` come from Jev, `goal` is the full
+   instruction, `context` is everything the child needs (paths, constraints, output format). The child sees
+   nothing else.
 5. Report which model ran, Jev's confidence and runner-up, and the facts that drove the pick.
 
 ## needs_input loop (questions in the middle of a task)
@@ -74,6 +75,10 @@ Children cannot ask the user. When `jev_delegate` returns `status=needs_input`:
    `User answer: ...`.
 
 ## Pitfalls
+
+- While allowed models are saved, a `pre_tool_call` hook blocks spawning `delegate_task` and returns these
+  steps. Use `jev_delegate` instead. `delegate_task` list/steer/stop still work.
+- `jev_delegate` has no `output_schema`: write the output format in `context` and check the files yourself.
 
 - `ran_on` is the model that actually ran. If it differs from `route`, report it.
 - `options.notes` saying AA is unavailable means only quota facts were sent. Tell the user that the pick is weaker.

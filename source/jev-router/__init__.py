@@ -168,28 +168,63 @@ def _models(args: dict, **_) -> str:
 
 
 def _make_delegate(ctx):
-    def _delegate(args: dict, **_) -> str:
-        cands = {router.key(c): c for c in router.load(_config_path())}
-        pick = cands.get(args.get("choice", ""))
+    def _one(svc, cands, t):
+        pick = cands.get(t.get("choice", ""))
         if not pick:  # trust boundary: only models the user allowed
-            return _ok(error=f"choice '{args.get('choice')}' is not a saved candidate", allowed=sorted(cands))
-        route = {"provider": pick["provider"], "model": pick["model"], "jev_confidence": args.get("confidence"),
-                 "by": "user override" if args.get("user_override") else "jev choice"}
-        svc = ctx.subagent_lifecycle
+            return None, _err(f"choice '{t.get('choice')}' is not a saved candidate", allowed=sorted(cands))
+        route = {"provider": pick["provider"], "model": pick["model"], "jev_confidence": t.get("confidence"),
+                 "by": "user override" if t.get("user_override") else "jev choice"}
         try:
-            handle = svc.launch({"goal": args["goal"], "context": (args.get("context") or "") + CHILD_PROTOCOL,
+            handle = svc.launch({"goal": t["goal"], "context": (t.get("context") or "") + CHILD_PROTOCOL,
                                  "provider": pick["provider"], "model": pick["model"]})
         except (ValueError, KeyError) as exc:  # SubagentLifecycleError is a ValueError
-            return _ok(error=f"launch failed: {exc}", route=route)
-        svc.wait(handle)
-        res = svc.result(handle)
-        out = {"route": route, "ran_on": {"provider": res.handle.provider, "model": res.handle.model},
-               "state": res.terminal_state.value}
-        if res.error_message:
-            out["error"] = res.error_message
-        out.update(router.parse_child(res.summary or ""))
-        return _ok(**out)
+            return None, {"error": f"launch failed: {exc}", "route": route}
+        return handle, {"route": route}
+
+    def _delegate(args: dict, **_) -> str:
+        cands = {router.key(c): c for c in router.load(_config_path())}
+        tasks = args.get("tasks") or [args]
+        svc = ctx.subagent_lifecycle
+        launched = [_one(svc, cands, t) for t in tasks]  # launch all first so children run in parallel
+        out = []
+        for handle, entry in launched:
+            if handle is not None:
+                svc.wait(handle)
+                res = svc.result(handle)
+                entry.update(ran_on={"provider": res.handle.provider, "model": res.handle.model},
+                             state=res.terminal_state.value)
+                if res.error_message:
+                    entry["error"] = res.error_message
+                entry.update(router.parse_child(res.summary or ""))
+            out.append(entry)
+        return _ok(**out[0]) if "tasks" not in args else _ok(results=out)
     return _delegate
+
+
+def _err(msg, **kw) -> dict:
+    return {"error": msg, **kw}
+
+
+ROUTE_NOTICE = (
+    "jev-router: subagent models are chosen by Jev, so delegate_task is not used while allowed models are saved. "
+    "Instead: 1) jev_router_models action=options. 2) Jev MCP (tool_search 'jev' if deferred): one task -> `choice` "
+    "with question/options as returned and context=task summary; several tasks -> one `classify` call with "
+    "items=one short summary per task and the same question/options. 3) ONE jev_delegate call with tasks=[{goal, "
+    "context, choice, confidence}, ...] (runs in parallel; put any output format rules in context). If the user "
+    "named a model, use it as choice with user_override=true."
+)
+
+
+def _route_guard(tool_name: str = "", args: dict = None, **_):
+    """pre_tool_call: steer spawning delegate_task to Jev routing; fail open when routing is not set up."""
+    if tool_name != "delegate_task" or (args or {}).get("action", "spawn") != "spawn":
+        return None
+    try:
+        if not router.load(_config_path()):
+            return None
+    except Exception:
+        return None
+    return {"action": "block", "message": ROUTE_NOTICE}
 
 
 MODELS_SCHEMA = {
@@ -209,18 +244,23 @@ MODELS_SCHEMA = {
         "required": ["action"]},
 }
 
+_TASK_PROPS = {
+    "goal": {"type": "string"}, "context": {"type": "string"},
+    "choice": {"type": "string", "description": "Allowed candidate id 'provider/model'."},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Jev's confidence for choice."},
+    "user_override": {"type": "boolean", "description": "true when the user named the model instead of Jev."}}
+
 DELEGATE_SCHEMA = {
     "name": "jev_delegate",
-    "description": ("Run one task as a subagent on the model Jev chose (`choice` = the option id 'provider/model' "
-                    "returned by Jev for jev_router_models action=options). The child is linked to this session. "
-                    "Returns status=done with result, or status=needs_input with a question: ask the user via "
-                    "clarify, then call again with the answer added to context."),
+    "description": ("Run tasks as subagents on the models Jev chose (`choice` = the option id 'provider/model' "
+                    "returned by Jev for jev_router_models action=options). Children are linked to this session. "
+                    "Pass `tasks` to run several in parallel (returns results[] in order), or a single goal/choice. "
+                    "Each result has status=done with result, or status=needs_input with a question: ask the user "
+                    "via clarify, then call again for that task with the answer added to context."),
     "parameters": {"type": "object", "properties": {
-        "goal": {"type": "string"}, "context": {"type": "string"},
-        "choice": {"type": "string", "description": "Allowed candidate id 'provider/model'."},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Jev's confidence for choice."},
-        "user_override": {"type": "boolean", "description": "true when the user named the model instead of Jev."}},
-        "required": ["goal", "choice"]},
+        **_TASK_PROPS,
+        "tasks": {"type": "array", "minItems": 1, "items": {"type": "object", "properties": _TASK_PROPS,
+                                                            "required": ["goal", "choice"]}}}},
 }
 
 
@@ -228,5 +268,6 @@ def register(ctx):
     root = Path(__file__).parent
     ctx.register_tool(name="jev_router_models", toolset="jev_router", schema=MODELS_SCHEMA, handler=_models)
     ctx.register_tool(name="jev_delegate", toolset="jev_router", schema=DELEGATE_SCHEMA, handler=_make_delegate(ctx))
+    ctx.register_hook("pre_tool_call", _route_guard)
     ctx.register_skill("jev-model-router", root / "skills" / "jev-model-router" / "SKILL.md",
-                       description="Use when choosing a model per task with Jev. Route and delegate.")
+                       description="Use when delegating subagents or choosing a model per task. Jev routes.")

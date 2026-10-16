@@ -6,8 +6,9 @@
   - `widget`: 허용할 모델을 체크하는 화면을 띄웁니다.
   - `options`: 허용 모델마다 AA 점수, 가격, 구독 잔량을 한 줄로 정리해 Jev `choice`에 넘길 선택지를 만듭니다.
   - `available` / `show` / `save`: 이 Hermes에서 인증된 모델 조회, 허용 목록 조회와 저장입니다. 그래서 PC나 구독이 달라도 그 환경의 모델로 다시 고르면 됩니다.
-- **`jev_delegate`**: Jev가 고른 모델(`provider/model`)이 허용 목록에 있는지 확인한 뒤, 그 모델로 하위 에이전트를 실행합니다(공개 플러그인 API `ctx.subagent_lifecycle`).
-- **Skill `jev-router:jev-model-router`**: 처음 설정하는 방법, Jev 질문 방식, 작업 중 질문 처리 절차를 담고 있습니다.
+- **`jev_delegate`**: Jev가 고른 모델(`provider/model`)이 허용 목록에 있는지 확인한 뒤, 그 모델로 하위 에이전트를 실행합니다(공개 플러그인 API `ctx.subagent_lifecycle`). `tasks=[...]`로 여러 작업을 한 번에 넘기면 병렬로 실행하고 `results[]`를 같은 순서로 돌려줍니다(0.4.0).
+- **`pre_tool_call` hook (0.4.0)**: 허용 모델이 저장돼 있으면 `delegate_task`의 하위 에이전트 생성(spawn)을 막고, Jev 라우팅 절차(`options` → Jev `choice`/`classify` → `jev_delegate`)를 안내 메시지로 돌려줍니다. 다른 Skill이 `delegate_task`를 지시해도 Jev를 거치게 하려는 장치입니다. 허용 모델이 없으면 개입하지 않고, `delegate_task`의 list/steer/stop은 그대로 통과합니다.
+- **Skill `jev-router:jev-model-router`**: 처음 설정하는 방법, Jev 질문 방식, 작업 중 질문 처리 절차를 담고 있습니다. 하위 에이전트에 위임할 때도 로드되도록 설명을 "Use when delegating subagents or choosing a model per task"로 두었습니다.
 
 ### 두 가지 제약을 이렇게 해결합니다
 | 제약 | 해결 방법 |
@@ -20,11 +21,11 @@
 
 ```
 source/jev-router/
-  plugin.yaml, __init__.py      도구 2개와 Skill 등록
+  plugin.yaml, __init__.py      도구 2개, pre_tool_call hook, Skill 등록
   router.py                     검증, 저장, AA 이름 매핑, Jev 선택지 생성, 위젯 렌더링 (표준 라이브러리만 사용)
   widget.html                   허용 모델 체크 화면 템플릿
   skills/jev-model-router/      번들 Skill
-  tests/test_router.py          단위 테스트
+  tests/                        단위 테스트 (router, AA 상태, hook·병렬 위임)
 ```
 
 API 키, Hermes 설정, 대화 DB, 후보 표(`candidates.json`)는 저장소에 포함하지 않습니다.
@@ -61,7 +62,7 @@ jev-model-router 설정해줘
 데스크톱 앱에서는 채팅 안에 **체크박스 선택 화면**이 나타납니다. provider별로 묶인 모델을 검색해 **쓸 수 있게 허용할 모델만 체크**하고 **저장**을 누르면 됩니다. tier 같은 등급은 정하지 않습니다. 화면에 참고용으로 모델마다 AA 점수, provider마다 구독 잔량이 표시되고, 이미 허용한 모델은 미리 체크돼 있습니다. 메신저나 CLI처럼 위젯을 띄울 수 없는 곳에서는 clarify 다중 선택으로 대신 고릅니다(질문 하나당 최대 4개). 저장할 때 이 환경의 모델 목록과 대조해 검증하며, 저장 위치는 `$HERMES_HOME/jev-router/candidates.json`(프로필별)입니다.
 
 ### 5. 사용
-평소처럼 작업을 지시합니다. Skill이 `options` → Jev `choice` → `jev_delegate` 순서로 실행하고, 어떤 모델이 선택됐는지와 Jev의 확신도, 차순위 모델을 함께 보고합니다. 간단한 질문은 하위 에이전트로 넘기지 않고 현재 세션이 바로 답합니다. "모델 X로 해줘"라고 하면 X로 바로 실행하는데, X는 허용 목록에 있어야 합니다.
+평소처럼 작업을 지시합니다. Skill이 `options` → Jev `choice`(작업 하나) 또는 `classify`(여러 작업, 1회) → `jev_delegate`(1회, 병렬) 순서로 실행하고, 어떤 모델이 선택됐는지와 Jev의 확신도, 차순위 모델을 함께 보고합니다. 간단한 질문은 하위 에이전트로 넘기지 않고 현재 세션이 바로 답합니다. "모델 X로 해줘"라고 하면 X로 바로 실행하는데, X는 허용 목록에 있어야 합니다.
 
 ## Jev에게 보내는 정보
 선택지 하나는 허용 모델 하나이고, 설명은 다음과 같은 한 줄입니다.
@@ -86,4 +87,8 @@ hermes plugins doctor source/jev-router --ci
 - AA 데이터는 Artificial Analysis 것입니다. 외부에 공개하거나 공유할 때는 출처를 표기해야 합니다. 모델 이름 변환 규칙이 AA 쪽 이름 변경과 맞지 않으면 "벤치마크 없음"으로 표시됩니다.
 - 하위 에이전트는 부모 세션보다 적은 도구만 쓸 수 있고 메모리가 없습니다. 필요한 경로와 규칙은 `context`에 담아 전달해야 합니다.
 - 하위 에이전트 결과는 Hermes 프로세스가 실행 중일 때만 유지됩니다(`subagent_lifecycle`의 제약).
+- `delegate_task`에는 작업별 모델 필드가 없어 hook으로 인자만 바꿀 수 없습니다. 그래서 hook은 차단 후 안내하는 방식이며, 위임할 때마다 첫 `delegate_task` 시도 1회가 차단 응답으로 소비됩니다.
+- `jev_delegate`는 `output_schema`를 지원하지 않습니다. 출력 형식은 `context`에 적고 결과 파일은 부모 세션이 확인합니다.
+- 동시 실행은 Hermes lifecycle 실행기 한도(8개)를 따릅니다. 그보다 많으면 나머지는 대기 후 실행됩니다.
+- hook을 끄려면 `candidates.json`의 허용 모델을 비우거나 플러그인을 비활성화합니다(`hermes plugins disable jev-router`).
 - 저장소를 복원할 수 있다는 것이 새 PC에서 로그인, Jev 키, 실제 작업까지 성공한다는 보장은 아닙니다.

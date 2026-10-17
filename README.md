@@ -47,7 +47,7 @@ hermes mcp test jev
 
 ### 3. 플러그인 설치·활성화
 ```text
-hermes plugins install Gary-Y-Lee/Hermes_Plugin_00.Jev/source/jev-router --enable
+hermes plugins install gary3207/Hermes_Plugin_00.Jev_Router/source/jev-router --enable
 hermes plugins list --plain --no-bundled
 ```
 특정 버전을 재현하려면 `--ref <commit SHA>`를 붙입니다. 같은 이름의 플러그인이 이미 있으면 먼저 차이를 확인하세요. 무조건 `--force`로 덮어쓰지 않습니다.

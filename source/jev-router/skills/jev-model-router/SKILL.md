@@ -2,7 +2,7 @@
 name: jev-model-router
 description: "Use when delegating subagents or choosing a model per task. Jev routes."
 version: 0.4.0
-author: Gary-Y-Lee
+author: gary3207
 license: MIT
 ---
 
